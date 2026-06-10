@@ -1,0 +1,14 @@
+{
+  "name": "voip-test-rig-voicebot",
+  "version": "0.1.0",
+  "description": "jambonz websocket app: bridges a call to the OpenAI Realtime API, driven by system-prompt.md",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@jambonz/node-client-ws": "^0.1.55",
+    "pino": "^9.4.0"
+  }
+}

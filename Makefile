@@ -10,7 +10,7 @@ endif
 SF_IOTCORE_HOST ?= mqtt.dev.sipfront.net
 
 .DEFAULT_GOAL := help
-.PHONY: help certs regen-certs build run up stop down logs ps restart agent webrtc-agent agent-logs clean
+.PHONY: help certs regen-certs build run up stop down logs ps restart agent webrtc-agent agent-logs voicebot clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -62,6 +62,11 @@ webrtc-agent: ## Launch a browser (WebRTC) agent in group "webrtc" + Selenium (n
 AGENT ?= sf-agent-webrtc
 agent-logs: ## Follow a launched agent's logs (override: make agent-logs AGENT=sf-agent-1)
 	docker logs -f $(AGENT)
+
+voicebot: certs ## Bring up the rig + the jambonz Voice-AI stack (opt-in; needs OPENAI_API_KEY in .env)
+	docker compose --profile voicebot up -d --build
+	bash scripts/wait-for-rig.sh
+	@echo "Voicebot up. Call 'voicebot' from the web client (https://localhost:8081/) or a softphone."
 
 clean: down ## Stop everything and delete generated certs
 	rm -rf certs/out

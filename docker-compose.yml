@@ -94,6 +94,138 @@ services:
     ports:
       - "8081:443"
 
+  # ---- jambonz Voice-AI sub-stack ------------------------------------------
+  # Dialing user "voicebot" is routed here by Kamailio (route[TOJAMBONZ]). jambonz
+  # answers and bridges the call to the OpenAI Realtime API via the voicebot app.
+  # Internal-net only, plain SIP/UDP; provisioned from the seeded `jambones` DB
+  # (kamailio/initdb.d/30-,31-). Two drachtio instances are required (one per app).
+  # jambonz images are amd64-only -> run under emulation on arm64 (no-op on amd64 CI).
+  #
+  # OPT-IN via the "voicebot" compose profile: the default rig (`make run`, CI) stays
+  # lean and does NOT start these. Bring them up with `make voicebot` (or
+  # `docker compose --profile voicebot up -d`). Needs OPENAI_API_KEY in .env.
+  redis:
+    image: redis:${REDIS_TAG:-7-alpine}
+    profiles: ["voicebot"]
+    networks:
+      internal:
+        ipv4_address: 172.30.20.53
+
+  jambonz-rtpengine:
+    image: drachtio/rtpengine:${JAMBONZ_RTPENGINE_TAG:-latest}
+    platform: ${JAMBONZ_PLATFORM:-linux/amd64}
+    profiles: ["voicebot"]
+    command: >-
+      rtpengine --interface=172.30.20.51 --listen-ng=22222
+      --foreground=true --log-stderr=true --log-level=5
+      --port-min=23000 --port-max=23100 --table=-1
+    networks:
+      internal:
+        ipv4_address: 172.30.20.51
+
+  freeswitch:
+    # NOTE: must be a jambonz-capable FreeSWITCH (mod_audio_fork/stream etc.) for the
+    # llm/OpenAI-Realtime S2S verb; pin to the tag matching the feature-server version.
+    image: drachtio/drachtio-freeswitch-mrf:${JAMBONZ_FS_TAG:-latest}
+    platform: ${JAMBONZ_PLATFORM:-linux/amd64}
+    profiles: ["voicebot"]
+    command: freeswitch --rtp-range-start 25000 --rtp-range-end 25100
+    networks:
+      internal:
+        ipv4_address: 172.30.20.52
+
+  drachtio-sbc:
+    image: drachtio/drachtio-server:${DRACHTIO_TAG:-0.8.26}
+    platform: ${JAMBONZ_PLATFORM:-linux/amd64}
+    profiles: ["voicebot"]
+    command: drachtio --contact "sip:*;transport=udp" --mtu 4096 --address 0.0.0.0 --port 9022 --secret cymru --loglevel info
+    networks:
+      internal:
+        ipv4_address: 172.30.20.50
+
+  drachtio-fs:
+    image: drachtio/drachtio-server:${DRACHTIO_TAG:-0.8.26}
+    platform: ${JAMBONZ_PLATFORM:-linux/amd64}
+    profiles: ["voicebot"]
+    command: drachtio --contact "sip:*;transport=udp" --mtu 4096 --address 0.0.0.0 --port 9022 --secret cymru --loglevel info
+    networks:
+      internal:
+        ipv4_address: 172.30.20.54
+
+  sbc-inbound:
+    image: jambonz/sbc-inbound:${JAMBONZ_SBC_TAG:-0.9.7}
+    platform: ${JAMBONZ_PLATFORM:-linux/amd64}
+    profiles: ["voicebot"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DRACHTIO_HOST: drachtio-sbc
+      DRACHTIO_PORT: "9022"
+      DRACHTIO_SECRET: cymru
+      JAMBONES_MYSQL_HOST: mysql
+      JAMBONES_MYSQL_USER: jambones
+      JAMBONES_MYSQL_PASSWORD: jambones
+      JAMBONES_MYSQL_DATABASE: jambones
+      JAMBONES_REDIS_HOST: redis
+      JAMBONES_REDIS_PORT: "6379"
+      JAMBONES_RTPENGINES: 172.30.20.51:22222
+      JAMBONES_NETWORK_CIDR: ${INTERNAL_SUPERNET:-172.30.0.0/16}
+      ENCRYPTION_SECRET: ${JAMBONZ_ENCRYPTION_SECRET:-rig-not-a-secret}
+      JWT_SECRET: ${JAMBONZ_ENCRYPTION_SECRET:-rig-not-a-secret}
+      JAMBONES_LOGLEVEL: info
+    networks:
+      internal:
+        ipv4_address: 172.30.20.55
+
+  feature-server:
+    image: jambonz/feature-server:${JAMBONZ_FS_SERVER_TAG:-10.2.2}
+    platform: ${JAMBONZ_PLATFORM:-linux/amd64}
+    profiles: ["voicebot"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DRACHTIO_HOST: drachtio-fs
+      DRACHTIO_PORT: "9022"
+      DRACHTIO_SECRET: cymru
+      JAMBONES_FREESWITCH: 172.30.20.52:8021:JambonzR0ck$
+      JAMBONES_SBCS: 172.30.20.50
+      JAMBONES_MYSQL_HOST: mysql
+      JAMBONES_MYSQL_USER: jambones
+      JAMBONES_MYSQL_PASSWORD: jambones
+      JAMBONES_MYSQL_DATABASE: jambones
+      JAMBONES_REDIS_HOST: redis
+      JAMBONES_REDIS_PORT: "6379"
+      JAMBONES_NETWORK_CIDR: ${INTERNAL_SUPERNET:-172.30.0.0/16}
+      ENCRYPTION_SECRET: ${JAMBONZ_ENCRYPTION_SECRET:-rig-not-a-secret}
+      HTTP_PORT: "3000"
+      JAMBONES_LOGLEVEL: info
+    networks:
+      internal:
+        ipv4_address: 172.30.20.56
+
+  # The voicebot app the feature-server calls (ws://voicebot:3000/openai-s2s).
+  # Bridges the call to OpenAI Realtime; behaviour from voicebot/system-prompt.md.
+  voicebot:
+    build:
+      context: ./voicebot
+      args:
+        NODE_TAG: ${NODE_TAG:-20-alpine}
+    profiles: ["voicebot"]
+    depends_on:
+      - feature-server
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      WS_PORT: "3000"
+      LOGLEVEL: info
+    volumes:
+      # Live-editable system prompt (read per call) — no rebuild needed to change it.
+      - ./voicebot/system-prompt.md:/app/system-prompt.md:ro
+    networks:
+      internal:
+        ipv4_address: 172.30.20.57
+
 networks:
   external:
     name: rig-external

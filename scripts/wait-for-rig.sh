@@ -42,3 +42,26 @@ wait_for rtpengine rtpengine_ready
 wait_for asterisk "${COMPOSE[@]}" exec -T asterisk asterisk -rx "core show uptime"
 
 echo "rig is ready"
+
+# ---- jambonz Voice-AI stack (best-effort) --------------------------------
+# Only checked when the "voicebot" compose profile is up (i.e. `make voicebot`);
+# the default rig doesn't start it. Readiness is NON-FATAL even then.
+if "${COMPOSE[@]}" ps --services --filter status=running 2>/dev/null | grep -qx feature-server; then
+  jambonz_deadline=$(( $(date +%s) + ${JAMBONZ_WAIT_TIMEOUT:-180} ))
+  jwait() {
+    local name="$1"; shift
+    printf 'waiting for %-13s ... ' "${name}"
+    while true; do
+      if "$@" >/dev/null 2>&1; then echo "ok"; return 0; fi
+      if [ "$(date +%s)" -ge "${jambonz_deadline}" ]; then echo "not ready (non-fatal)"; return 0; fi
+      sleep 3
+    done
+  }
+  # feature-server: HTTP health port answers once it's connected to drachtio/FS/DB
+  jwait feature-server "${COMPOSE[@]}" exec -T feature-server \
+    node -e 'require("http").get("http://127.0.0.1:3000/",r=>process.exit(r.statusCode<500?0:1)).on("error",()=>process.exit(1))'
+  # voicebot app: websocket server listening
+  jwait voicebot "${COMPOSE[@]}" exec -T voicebot \
+    node -e 'require("http").get("http://127.0.0.1:3000/",r=>process.exit(0)).on("error",()=>process.exit(1))'
+  echo "jambonz checked"
+fi

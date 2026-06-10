@@ -12,32 +12,38 @@ Push a change and a runner stands the rig up in Docker, launches Sipfront test
 agents into it, runs the full test suite end-to-end, and tears it all down.
 
 ```
-                   ┌──────────────────────── GitHub runner ─────────────────────────┐
-                   │                                                                │
-  Sipfront cloud   │   external net (172.30.10.0/24)     internal net (.20.0/24)    │
-  (dev) ◀── MQTT ──┼─▶ sf-agent ─SIP/RTP─▶ kamailio ─────────▶ asterisk             │
-       443         │   (bridge mode)        │   ▲                  ▲                │
-                   │                        │   │ ng:2223          │ media          │
-                   │   webapp ──WSS────────▶┘   └─▶ rtpengine ◀────┘                │
-                   │   (sip.js)                   (media bridge ext◀▶int)           │
-                   │                              mysql (subscribers/location)      │
-                   └────────────────────────────────────────────────────────────────┘
+  Sipfront cloud (dev) ◀──MQTT/443──▶ sf-agent   (agents dial out to the cloud)
+
+┌─────────────────────────────── GitHub runner ───────────────────────────────┐
+│  external net 172.30.10.0/24            internal net 172.30.20.0/24         │
+│                                                                             │
+│  sf-agent ──SIP/RTP──┐                    ┌──▶ asterisk  (MoH/IVR/ooo)      │
+│  webapp (sip.js) ─WSS─┼──▶ kamailio ───────┼──▶ jambonz ──▶ OpenAI Realtime │
+│                       │      ▲             │      (voicebot)                │
+│                       └─▶ rtpengine ◀──────┘                                │
+│                          (media bridge ext◀▶int, transcode)                 │
+│                          mysql · redis                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Components
 
-- **kamailio** — SIP proxy: registration, MySQL digest auth, location lookup. Forces
-  **every** call through Asterisk so the app server owns the media path, and terminates
-  WSS for the web client.
+- **kamailio** — SIP proxy: registration, MySQL digest auth, location lookup. Routes the
+  `voicebot` user to jambonz; forces **every** other call through Asterisk so the app
+  server owns the media path. Terminates WSS for the web client.
 - **asterisk** — application/announcement server (music-on-hold, voicemail, IVR /
   attendant, out-of-office). Sits in the media path for all calls.
 - **rtpengine** — media relay between the two networks. Transcodes endpoint codecs
-  (Opus, G.722, …) to the G.711 Asterisk speaks, and bridges WebRTC DTLS-SRTP ⇄ plain
-  RTP. Userspace-only (`table = -1`), since runners lack the in-kernel module.
+  (Opus, G.722, …) to the G.711 the app servers speak, and bridges WebRTC DTLS-SRTP ⇄
+  plain RTP. Userspace-only (`table = -1`), since runners lack the in-kernel module.
 - **webapp** — a minimal sip.js SIP-over-WebRTC client served over HTTPS; registers and
   calls over WSS to Kamailio.
-- **mysql** — Kamailio's subscriber/location store, seeded on first boot from
-  `kamailio/initdb.d/*.sql`.
+- **jambonz** (+ **voicebot**) — a Voice-AI sub-stack (drachtio SBC, rtpengine, FreeSWITCH,
+  sbc-inbound, feature-server, redis). Dialing **`voicebot`** reaches it; the `voicebot`
+  app bridges the call to the **OpenAI Realtime API**, behaving per the editable
+  `voicebot/system-prompt.md`. Needs `OPENAI_API_KEY`.
+- **mysql** — Kamailio's subscriber/location store **and** the jambonz `jambones` DB,
+  seeded on first boot from `kamailio/initdb.d/*.sql`.
 
 Two docker networks model a real deployment: clients and the web app on the
 **external** edge, app/DB services **internal**, with rtpengine the only bridge across.
@@ -81,11 +87,16 @@ that pool.
 
 ```bash
 make run            # certs + build + start the rig, wait until ready
+make voicebot       # rig + the jambonz Voice-AI stack (opt-in; needs OPENAI_API_KEY in .env)
 make agent          # launch 2 SIP agents                         (needs SF_POOL_* in .env)
 make webrtc-agent   # launch the WebRTC browser agent + Selenium   (needs SF_POOL_* in .env)
 make agent-logs     # follow an agent (AGENT=sf-agent-1 | sf-agent-webrtc | sf-selenium)
 make down           # stop the rig and remove the agents
 ```
+
+The jambonz voicebot stack is **opt-in** (a `voicebot` compose profile), so the default
+`make run` and CI stay lean. `make voicebot` brings up the rig plus jambonz; then call
+`voicebot` to talk to the OpenAI-Realtime bot.
 
 `make help` lists every target. Copy `.env.example` to `.env` and set
 `SF_POOL_ID`/`SF_POOL_SECRET` (optionally override subnets/passwords) before launching
