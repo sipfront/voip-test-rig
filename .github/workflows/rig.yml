@@ -36,8 +36,16 @@ jobs:
       - name: Generate on-demand CA + server certs
         run: bash certs/gen-certs.sh
 
+      # --profile voicebot also starts the jambonz Voice-AI stack (drachtio, rtpengine,
+      # FreeSWITCH, sbc-inbound, feature-server, redis, voicebot) so "VoiceAI Test: Basic
+      # call" has a target. Gemini is the working backend (the public FreeSWITCH image's
+      # OpenAI module still speaks the removed Realtime beta shape — see README). Needs
+      # the GEMINI_API_KEY repo secret.
       - name: Build and start the rig
-        run: docker compose up -d --build
+        env:
+          VOICEBOT_VENDOR: google
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: docker compose --profile voicebot up -d --build
 
       - name: Wait for the rig to be ready
         run: bash scripts/wait-for-rig.sh
@@ -60,7 +68,11 @@ jobs:
       - name: Settle (let agents connect to the Sipfront cloud)
         run: sleep 25
 
-      - name: Run project — voip-test-rig
+      # TEMPORARY: run only "VoiceAI Test: Basic call" to shorten the cycle while
+      # bringing the jambonz voicebot up in CI. Revert to the full project run by
+      # swapping back to: mode: project / project_name: voip-test-rig (and the
+      # project-style Report step below).
+      - name: Run test — VoiceAI Basic call
         id: project_run
         if: ${{ !cancelled() }}
         uses: sipfront/action-call-test@v1.0.1
@@ -68,53 +80,31 @@ jobs:
           public_key: ${{ secrets.SF_API_PUBLIC_KEY }}
           secret_key: ${{ secrets.SF_API_SECRET_KEY }}
           sf_environment: dev
-          mode: project
-          project_name: voip-test-rig
+          mode: test
+          name: "VoiceAI Test: Basic call"
           report_mode: kiosk
           timeout: "3600"
 
-      # The action only outputs run totals, so pull the per-test pass/fail breakdown
-      # from the Sipfront API (HTTP Basic auth): GET /projects/:id/status/last returns
-      # {tests:[{run:{has_passed,result_description,…}, test:{id,name,…}}]} — every
-      # test's last result, names included. Since CI runs nothing else against this
-      # project concurrently, "last" == this run.
       - name: Report
         if: ${{ !cancelled() }}
         env:
-          SF_API_PUBLIC_KEY: ${{ secrets.SF_API_PUBLIC_KEY }}
-          SF_API_SECRET_KEY: ${{ secrets.SF_API_SECRET_KEY }}
-          PROJECT_ID: ${{ steps.project_run.outputs.project_id }}
           RUN_STATUS: ${{ steps.project_run.outputs.status }}
           REPORT_URL: ${{ steps.project_run.outputs.report_url }}
+          TEST_NAME: ${{ steps.project_run.outputs.test_name }}
+          RESULT_DESC: ${{ steps.project_run.outputs.result_description }}
         run: |
-          base="https://app.dev.sipfront.com/api/v2"
-          last=$(curl -fsS -u "${SF_API_PUBLIC_KEY}:${SF_API_SECRET_KEY}" "${base}/projects/${PROJECT_ID}/status/last" || echo "")
           {
-            echo "### Sipfront project run — voip-test-rig"
-            echo "- **overall**: ${RUN_STATUS:-n/a} — [report](${REPORT_URL})"
-            if [ -n "$last" ]; then
-              jq -rn --argjson last "$last" '
-                ($last.tests? // $last.data? // $last) as $rows
-                | ($rows | map(select(.run.has_passed == 1)) | length) as $passed
-                | ($rows | length) as $total
-                | "- **passed**: \($passed)/\($total) · **failed**: \($total - $passed)",
-                  ( ($rows | map(select(.run.has_passed != 1))) as $failed
-                    | if ($failed | length) > 0 then
-                        "- **failed tests:**",
-                        ( $failed[] | "  - " + (.test.name // ("test #" + (.test.id|tostring)))
-                          + (if (.run.result_description // "") != "" then " — " + .run.result_description else "" end) )
-                      else "- all tests passed ✅" end )
-              ' || echo "- (could not parse per-test results)"
-            else
-              echo "- (could not fetch per-test results from the API)"
-            fi
+            echo "### Sipfront test — ${TEST_NAME:-VoiceAI Test: Basic call}"
+            echo "- **status**: ${RUN_STATUS:-n/a} — [report](${REPORT_URL})"
+            if [ -n "${RESULT_DESC:-}" ]; then echo "- ${RESULT_DESC}"; fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Collect logs
         if: ${{ always() }}
         run: |
           mkdir -p rig-logs
-          docker compose logs --no-color > rig-logs/compose.log 2>&1 || true
+          # --profile voicebot so the jambonz/voicebot service logs are captured too.
+          docker compose --profile voicebot logs --no-color > rig-logs/compose.log 2>&1 || true
           for i in $(seq 1 "${AGENT_COUNT}"); do
             docker logs "sf-agent-${i}" > "rig-logs/sf-agent-${i}.log" 2>&1 || true
           done
@@ -134,4 +124,4 @@ jobs:
         run: |
           for i in $(seq 1 "${AGENT_COUNT}"); do docker rm -f "sf-agent-${i}" || true; done
           docker rm -f sf-agent-webrtc sf-selenium || true
-          docker compose down -v || true
+          docker compose --profile voicebot down -v || true
