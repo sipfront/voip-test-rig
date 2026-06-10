@@ -18,7 +18,7 @@ agents into it, runs the full test suite end-to-end, and tears it all down.
 │  external net 172.30.10.0/24            internal net 172.30.20.0/24         │
 │                                                                             │
 │  sf-agent ──SIP/RTP──┐                    ┌──▶ asterisk  (MoH/IVR/ooo)      │
-│  webapp (sip.js) ─WSS─┼──▶ kamailio ───────┼──▶ jambonz ──▶ OpenAI Realtime │
+│  webapp (sip.js) ─WSS─┼──▶ kamailio ───────┼──▶ jambonz ──▶ Gemini / OpenAI │
 │                       │      ▲             │      (voicebot)                │
 │                       └─▶ rtpengine ◀──────┘                                │
 │                          (media bridge ext◀▶int, transcode)                 │
@@ -42,11 +42,9 @@ agents into it, runs the full test suite end-to-end, and tears it all down.
   sbc-inbound, feature-server, redis). Dialing **`voicebot`** reaches it; the `voicebot`
   app bridges the call to a speech-to-speech LLM, behaving per the editable
   `voicebot/system-prompt.md`. The backend is **switchable via `VOICEBOT_VENDOR`** in
-  `.env` — `google` (Gemini Live, needs `GEMINI_API_KEY`) or `openai` (OpenAI Realtime,
-  needs `OPENAI_API_KEY`). **`google` is the working default**; the `openai` path is
-  currently blocked by the public FreeSWITCH image still using OpenAI's removed
-  Realtime *beta* handshake (`beta_api_shape_disabled`) — revisit when a newer
-  `drachtio-freeswitch-mrf` ships the GA shape.
+  `.env` — `google` (the working default) or `openai`. See
+  [Voice-AI voicebot](#voice-ai-voicebot-openai-vs-google) for how each is wired and why
+  the OpenAI path is currently blocked.
 - **mysql** — Kamailio's subscriber/location store **and** the jambonz `jambones` DB,
   seeded on first boot from `kamailio/initdb.d/*.sql`.
 
@@ -54,6 +52,61 @@ Two docker networks model a real deployment: clients and the web app on the
 **external** edge, app/DB services **internal**, with rtpengine the only bridge across.
 The editable surface is the config under `kamailio/`, `rtpengine/`, `asterisk/`,
 `webapp/`, and `docker-compose.yml`.
+
+## Voice-AI voicebot (OpenAI vs Google)
+
+Dialing **`voicebot`** is routed by Kamailio into the jambonz sub-stack, which answers
+and bridges the call to a **speech-to-speech (S2S) LLM**. The bot's persona/behaviour
+comes from **`voicebot/system-prompt.md`** — mounted read-only into the container and
+**read live on every call** (edit it, next call picks it up; no rebuild).
+
+### How the app picks a backend
+
+`voicebot/lib/routes/voicebot.js` exposes one websocket route (`/voicebot`) and, per
+call, emits a jambonz **`llm` verb** built for the vendor named in **`VOICEBOT_VENDOR`**
+(`google` | `openai`). Both vendors read the **same** `system-prompt.md`; only the verb
+shape and the credential differ:
+
+| | `google` (default) | `openai` |
+| --- | --- | --- |
+| Env key | `GEMINI_API_KEY` | `OPENAI_API_KEY` |
+| jambonz verb | `vendor: google` | `vendor: openai` |
+| Model | `models/gemini-2.5-flash-native-audio-latest` (override: `VOICEBOT_GOOGLE_MODEL`) | `gpt-realtime` (override: `VOICEBOT_OPENAI_MODEL`) |
+| Prompt → | `llmOptions.setup.systemInstruction` | `llmOptions.session_update.instructions` |
+| Voice | `speechConfig` prebuilt voice (`VOICEBOT_GOOGLE_VOICE`, default `Puck`) | `audio.output.voice` (`alloy`) |
+| FreeSWITCH module | `mod_google_s2s` (`uuid_google_s2s`) | `mod_openai_s2s` (`uuid_openai_s2s`) |
+
+The **feature-server** runs the verb, but the actual S2S websocket to the provider is
+opened by **FreeSWITCH** (the corresponding `mod_*_s2s` module), not by jambonz. That
+detail is the crux of the OpenAI problem below.
+
+### Why OpenAI currently doesn't work
+
+The pinned media image is **`drachtio/drachtio-freeswitch-mrf:latest`** (FreeSWITCH
+**1.10.10**), paired with **`jambonz/feature-server:10.2.2`**. Its `mod_openai_s2s`
+still connects to OpenAI's **Realtime *beta*** endpoint and sends the old beta session
+shape. OpenAI has since removed the beta API in favour of GA (`/v1/realtime`), so the
+session is rejected a second or two after media is established:
+
+```
+beta_api_shape_disabled: The Realtime Beta API is no longer supported.
+Please use /v1/realtime for the GA API.
+```
+
+The call sets up (SIP + RTP both connect) and then drops when the OpenAI socket closes.
+The feature-server itself is GA-aware, but it doesn't open that socket — FreeSWITCH does,
+and this image's module predates the cutover. There's no beta/GA toggle on the module and
+no newer public `drachtio-freeswitch-mrf` tag with the GA shape, so **OpenAI S2S is an
+upstream blocker**, not a config error on our side. Revisit when a newer FreeSWITCH-MRF
+image ships an updated `mod_openai_s2s`.
+
+**Google has no such issue:** `mod_google_s2s` talks to the Gemini Live API
+(`bidiGenerateContent`) directly, so dialing `voicebot` with `VOICEBOT_VENDOR=google`
+connects and holds a real two-way conversation. (One gotcha we hit: the older
+`gemini-2.0-flash-live-001` model isn't served on this key's `v1beta` endpoint — hence
+the `gemini-2.5-flash-native-audio-latest` default; list valid Live models with
+`GET https://generativelanguage.googleapis.com/v1beta/models` and look for those
+supporting `bidiGenerateContent`.)
 
 ## How it's tested
 
@@ -92,7 +145,7 @@ that pool.
 
 ```bash
 make run            # certs + build + start the rig, wait until ready
-make voicebot       # rig + the jambonz Voice-AI stack (opt-in; needs OPENAI_API_KEY in .env)
+make voicebot       # rig + the jambonz Voice-AI stack (opt-in; needs GEMINI_API_KEY in .env)
 make agent          # launch 2 SIP agents                         (needs SF_POOL_* in .env)
 make webrtc-agent   # launch the WebRTC browser agent + Selenium   (needs SF_POOL_* in .env)
 make agent-logs     # follow logs from all running sf-agent-* containers
@@ -101,7 +154,8 @@ make down           # stop the rig and remove the agents
 
 The jambonz voicebot stack is **opt-in** (a `voicebot` compose profile), so the default
 `make run` and CI stay lean. `make voicebot` brings up the rig plus jambonz; then call
-`voicebot` to talk to the OpenAI-Realtime bot.
+`voicebot` to talk to the bot (Gemini Live by default — see
+[Voice-AI voicebot](#voice-ai-voicebot-openai-vs-google)).
 
 `make help` lists every target. Copy `.env.example` to `.env` and set
 `SF_POOL_ID`/`SF_POOL_SECRET` (optionally override subnets/passwords) before launching
