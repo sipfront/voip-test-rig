@@ -40,8 +40,10 @@ agents into it, runs the full test suite end-to-end, and tears it all down.
   calls over WSS to Kamailio.
 - **jambonz** (+ **voicebot**) — a Voice-AI sub-stack (drachtio SBC, rtpengine, FreeSWITCH,
   sbc-inbound, feature-server, redis). Dialing **`voicebot`** reaches it; the `voicebot`
-  app bridges the call to the **OpenAI Realtime API**, behaving per the editable
-  `voicebot/system-prompt.md`. Needs `OPENAI_API_KEY`.
+  app bridges the call to a speech-to-speech LLM, behaving per the editable
+  `voicebot/system-prompt.md`. The backend is **switchable via `VOICEBOT_VENDOR`** in
+  `.env` — `openai` (OpenAI Realtime, needs `OPENAI_API_KEY`) or `google` (Gemini Live,
+  needs `GEMINI_API_KEY`).
 - **mysql** — Kamailio's subscriber/location store **and** the jambonz `jambones` DB,
   seeded on first boot from `kamailio/initdb.d/*.sql`.
 

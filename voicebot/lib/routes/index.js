@@ -1,3 +1,3 @@
 module.exports = ({logger, makeService}) => {
-  require('./openai-s2s')({logger, makeService});
+  require('./voicebot')({logger, makeService});
 };

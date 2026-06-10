@@ -22,7 +22,7 @@ VALUES ('9351f46a-678c-43f5-b8a6-d4eb58d131af',
 
 -- websocket "call hook" for the application = our voicebot app + its route path
 INSERT INTO webhooks (webhook_sid, url, method)
-VALUES ('d31568d0-b193-4a05-8ff6-778369bc6efe', 'ws://voicebot:3000/openai-s2s', 'POST');
+VALUES ('d31568d0-b193-4a05-8ff6-778369bc6efe', 'ws://voicebot:3000/voicebot', 'POST');
 
 -- the voicebot application (call_hook_sid -> the websocket above)
 INSERT INTO applications
