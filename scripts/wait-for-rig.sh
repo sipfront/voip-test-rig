@@ -61,9 +61,11 @@ wait_for mysql "${COMPOSE[@]}" exec -T mysql \
 # Kamailio: control socket answers once the config loaded successfully
 wait_for kamailio "${COMPOSE[@]}" exec -T kamailio kamcmd core.uptime
 
-# rtpengine: prints this line once interfaces are bound and it's ready
-rtpengine_ready() { "${COMPOSE[@]}" logs rtpengine 2>&1 | grep -q "Startup complete"; }
-wait_for rtpengine rtpengine_ready
+# rtpengine: prints this line once interfaces are bound and it's ready.
+# NB: a real command (bash -c ...), not a shell function — `try` wraps probes in
+# `timeout`, which can only exec a binary, not a function (that broke this check
+# in CI, where `timeout` exists; locally it doesn't, so the bug was hidden).
+wait_for rtpengine bash -c "${COMPOSE[*]} logs rtpengine 2>&1 | grep -q 'Startup complete'"
 
 # Asterisk: the CLI answers on the control socket once it's fully booted
 wait_for asterisk "${COMPOSE[@]}" exec -T asterisk asterisk -rx "core show uptime"
