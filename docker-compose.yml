@@ -214,8 +214,8 @@ services:
       internal:
         ipv4_address: 172.30.20.56
 
-  # The voicebot app the feature-server calls (ws://voicebot:3000/openai-s2s).
-  # Bridges the call to OpenAI Realtime; behaviour from voicebot/system-prompt.md.
+  # The voicebot app the feature-server calls (ws://voicebot:3000/voicebot).
+  # Bridges the call to the VOICEBOT_VENDOR backend; behaviour from system-prompt.md.
   voicebot:
     build:
       context: ./voicebot
@@ -225,8 +225,8 @@ services:
     depends_on:
       - feature-server
     environment:
-      # Switch the Voice-AI backend: openai (OpenAI Realtime) | google (Gemini Live).
-      VOICEBOT_VENDOR: ${VOICEBOT_VENDOR:-openai}
+      # Switch the Voice-AI backend: google (Gemini Live) | openai (OpenAI Realtime).
+      VOICEBOT_VENDOR: ${VOICEBOT_VENDOR:-google}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       WS_PORT: "3000"

@@ -34,7 +34,7 @@ const buildLlm = (vendor, instructions, logger) => {
     // output; system prompt -> setup.systemInstruction. See google_s2s task.
     return {
       vendor: 'google',
-      model: process.env.VOICEBOT_GOOGLE_MODEL || 'models/gemini-2.0-flash-live-001',
+      model: process.env.VOICEBOT_GOOGLE_MODEL || 'models/gemini-2.5-flash-native-audio-latest',
       auth: {apiKey},
       actionHook: '/final',
       eventHook: '/event',

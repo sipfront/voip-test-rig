@@ -42,8 +42,11 @@ agents into it, runs the full test suite end-to-end, and tears it all down.
   sbc-inbound, feature-server, redis). Dialing **`voicebot`** reaches it; the `voicebot`
   app bridges the call to a speech-to-speech LLM, behaving per the editable
   `voicebot/system-prompt.md`. The backend is **switchable via `VOICEBOT_VENDOR`** in
-  `.env` — `openai` (OpenAI Realtime, needs `OPENAI_API_KEY`) or `google` (Gemini Live,
-  needs `GEMINI_API_KEY`).
+  `.env` — `google` (Gemini Live, needs `GEMINI_API_KEY`) or `openai` (OpenAI Realtime,
+  needs `OPENAI_API_KEY`). **`google` is the working default**; the `openai` path is
+  currently blocked by the public FreeSWITCH image still using OpenAI's removed
+  Realtime *beta* handshake (`beta_api_shape_disabled`) — revisit when a newer
+  `drachtio-freeswitch-mrf` ships the GA shape.
 - **mysql** — Kamailio's subscriber/location store **and** the jambonz `jambones` DB,
   seeded on first boot from `kamailio/initdb.d/*.sql`.
 
