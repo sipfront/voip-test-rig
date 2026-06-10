@@ -59,9 +59,9 @@ webrtc-agent: ## Launch a browser (WebRTC) agent in group "webrtc" + Selenium (n
 	bash scripts/launch-webrtc-agent.sh
 	@echo "Logs: make agent-logs"
 
-agent-logs: ## Follow logs from all running sf-agent-* containers (Ctrl-C to stop)
-	@names="$$(docker ps --format '{{.Names}}' --filter 'name=sf-agent-' | sort)"; \
-	if [ -z "$$names" ]; then echo "no sf-agent-* containers running"; exit 0; fi; \
+agent-logs: ## Follow logs from all running agent containers (sf-agent-* and sf-selenium; Ctrl-C to stop)
+	@names="$$(docker ps --format '{{.Names}}' --filter 'name=sf-agent-' --filter 'name=sf-selenium' | sort)"; \
+	if [ -z "$$names" ]; then echo "no sf-agent-* / sf-selenium containers running"; exit 0; fi; \
 	echo "following: $$(echo $$names | tr '\n' ' ')"; \
 	pids=""; \
 	for c in $$names; do \
