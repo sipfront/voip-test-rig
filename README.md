@@ -90,7 +90,7 @@ make run            # certs + build + start the rig, wait until ready
 make voicebot       # rig + the jambonz Voice-AI stack (opt-in; needs OPENAI_API_KEY in .env)
 make agent          # launch 2 SIP agents                         (needs SF_POOL_* in .env)
 make webrtc-agent   # launch the WebRTC browser agent + Selenium   (needs SF_POOL_* in .env)
-make agent-logs     # follow an agent (AGENT=sf-agent-1 | sf-agent-webrtc | sf-selenium)
+make agent-logs     # follow logs from all running sf-agent-* containers
 make down           # stop the rig and remove the agents
 ```
 

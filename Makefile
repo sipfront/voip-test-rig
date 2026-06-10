@@ -44,8 +44,8 @@ down: stop ## Alias for `stop`, plus remove any local Sipfront agents
 
 restart: down run ## Recreate the rig from scratch
 
-logs: ## Follow logs from all rig services
-	docker compose logs -f
+logs: ## Follow logs from all rig services (incl. the jambonz/voicebot stack)
+	docker compose --profile voicebot logs -f
 
 ps: ## Show rig container status
 	docker compose ps
@@ -53,15 +53,22 @@ ps: ## Show rig container status
 AGENTS ?= 2
 agent: ## Launch AGENTS Sipfront agents on the external net (needs SF_POOL_ID/SECRET in .env)
 	bash scripts/launch-agents.sh $(AGENTS)
-	@echo "Logs: make agent-logs AGENT=sf-agent-1"
+	@echo "Logs: make agent-logs"
 
 webrtc-agent: ## Launch a browser (WebRTC) agent in group "webrtc" + Selenium (needs SF_POOL_ID/SECRET in .env)
 	bash scripts/launch-webrtc-agent.sh
-	@echo "Logs: make agent-logs   (or: make agent-logs AGENT=sf-agent-1)"
+	@echo "Logs: make agent-logs"
 
-AGENT ?= sf-agent-webrtc
-agent-logs: ## Follow a launched agent's logs (override: make agent-logs AGENT=sf-agent-1)
-	docker logs -f $(AGENT)
+agent-logs: ## Follow logs from all running sf-agent-* containers (Ctrl-C to stop)
+	@names="$$(docker ps --format '{{.Names}}' --filter 'name=sf-agent-' | sort)"; \
+	if [ -z "$$names" ]; then echo "no sf-agent-* containers running"; exit 0; fi; \
+	echo "following: $$(echo $$names | tr '\n' ' ')"; \
+	pids=""; \
+	for c in $$names; do \
+	  ( docker logs -f "$$c" 2>&1 | sed "s/^/[$$c] /" ) & pids="$$pids $$!"; \
+	done; \
+	trap 'kill $$pids 2>/dev/null' INT TERM; \
+	wait
 
 voicebot: certs ## Bring up the rig + the jambonz Voice-AI stack (opt-in; needs OPENAI_API_KEY in .env)
 	docker compose --profile voicebot up -d --build
