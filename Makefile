@@ -35,12 +35,12 @@ run: certs ## Generate certs, build, start the rig, and wait until it's ready
 
 up: run ## Alias for `run`
 
-stop: ## Stop and remove the rig containers, networks and volumes
-	docker compose down -v
-
-down: stop ## Alias for `stop`, plus remove any local Sipfront agents
+stop: ## Stop the rig (containers, networks, volumes) and remove any local Sipfront agents
+	docker compose --profile voicebot down -v
 	-docker rm -f $$(docker ps -aq --filter 'name=sf-agent-') 2>/dev/null || true
 	-docker rm -f sf-selenium 2>/dev/null || true
+
+down: stop ## Alias for `stop`
 
 restart: down run ## Recreate the rig from scratch
 
