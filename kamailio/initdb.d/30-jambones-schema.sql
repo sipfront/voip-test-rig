@@ -775,3 +775,23 @@ ALTER TABLE accounts ADD FOREIGN KEY device_calling_application_sid_idxfk (devic
 ALTER TABLE accounts ADD FOREIGN KEY siprec_hook_sid_idxfk (siprec_hook_sid) REFERENCES applications (application_sid);
 
 SET FOREIGN_KEY_CHECKS=1;
+
+-- ---------------------------------------------------------------------------
+-- llm_credentials: feature-server 10.x queries this table during account
+-- lookup, but it is NOT in api-server main's jambones-sql.sql (added later via a
+-- migration). We don't store LLM creds in the DB (the voicebot uses an inline
+-- OpenAI api key on the `llm` verb), so an empty table is enough — it just has to
+-- exist or getAccountDetails throws and the FS rejects the call (503 -> 500).
+CREATE TABLE IF NOT EXISTS llm_credentials
+(
+llm_credential_sid CHAR(36) NOT NULL UNIQUE,
+service_provider_sid CHAR(36),
+account_sid CHAR(36),
+vendor VARCHAR(32) NOT NULL,
+api_key VARCHAR(8192),
+model_name VARCHAR(256),
+last_used DATETIME,
+created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+label VARCHAR(64),
+PRIMARY KEY (llm_credential_sid)
+);
