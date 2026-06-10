@@ -11,6 +11,10 @@
 services:
   mysql:
     image: mysql:${MYSQL_TAG:-8}
+    # MySQL 8.4 ships mysql_native_password unloaded; re-enable it so the jambonz
+    # `jambones` user (created WITH mysql_native_password) works and the jambonz
+    # mysql2 client authenticates without caching_sha2 public-key retrieval.
+    command: ["--mysql-native-password=ON"]
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rigrootpw}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-kamailio}
@@ -170,6 +174,9 @@ services:
       JAMBONES_REDIS_HOST: redis
       JAMBONES_REDIS_PORT: "6379"
       JAMBONES_RTPENGINES: 172.30.20.51:22222
+      # Required at init by @jambonz/time-series; no InfluxDB here, writes are
+      # tolerated/ignored at runtime. Just needs to be set.
+      JAMBONES_TIME_SERIES_HOST: 127.0.0.1
       JAMBONES_NETWORK_CIDR: ${INTERNAL_SUPERNET:-172.30.0.0/16}
       ENCRYPTION_SECRET: ${JAMBONZ_ENCRYPTION_SECRET:-rig-not-a-secret}
       JWT_SECRET: ${JAMBONZ_ENCRYPTION_SECRET:-rig-not-a-secret}
@@ -191,6 +198,8 @@ services:
       DRACHTIO_SECRET: cymru
       JAMBONES_FREESWITCH: 172.30.20.52:8021:JambonzR0ck$
       JAMBONES_SBCS: 172.30.20.50
+      # Required at init by @jambonz/time-series (no InfluxDB here; writes ignored).
+      JAMBONES_TIME_SERIES_HOST: 127.0.0.1
       JAMBONES_MYSQL_HOST: mysql
       JAMBONES_MYSQL_USER: jambones
       JAMBONES_MYSQL_PASSWORD: jambones
