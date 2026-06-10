@@ -63,9 +63,11 @@ agent-logs: ## Follow logs from all running agent containers (sf-agent-* and sf-
 	@names="$$(docker ps --format '{{.Names}}' --filter 'name=sf-agent-' --filter 'name=sf-selenium' | sort)"; \
 	if [ -z "$$names" ]; then echo "no sf-agent-* / sf-selenium containers running"; exit 0; fi; \
 	echo "following: $$(echo $$names | tr '\n' ' ')"; \
-	pids=""; \
+	esc=$$(printf '\033'); reset="$${esc}[0m"; palette="36 33 32 35 34 31 96 93 92 95"; \
+	i=1; pids=""; \
 	for c in $$names; do \
-	  ( docker logs -f "$$c" 2>&1 | sed "s/^/[$$c] /" ) & pids="$$pids $$!"; \
+	  code=$$(echo $$palette | cut -d' ' -f$$i); i=$$(( i % 10 + 1 )); \
+	  ( docker logs -f "$$c" 2>&1 | sed "s/^/$${esc}[$${code}m$$c$${reset} | /" ) & pids="$$pids $$!"; \
 	done; \
 	trap 'kill $$pids 2>/dev/null' INT TERM; \
 	wait
