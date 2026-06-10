@@ -178,6 +178,13 @@ services:
       # tolerated/ignored at runtime. Just needs to be set.
       JAMBONES_TIME_SERIES_HOST: 127.0.0.1
       JAMBONES_NETWORK_CIDR: ${INTERNAL_SUPERNET:-172.30.0.0/16}
+      # Static-addressing mode: with a single fixed feature-server, route inbound
+      # calls straight to its drachtio by name instead of redis-based discovery
+      # (the OPTIONS-ping/active-fs registration only works in K8S or needs more
+      # moving parts). K8S=1 just switches jambonz to service-name addressing.
+      K8S: "1"
+      K8S_FEATURE_SERVER_SERVICE_NAME: drachtio-fs
+      K8S_SBC_SIP_SERVICE_NAME: drachtio-sbc
       ENCRYPTION_SECRET: ${JAMBONZ_ENCRYPTION_SECRET:-rig-not-a-secret}
       JWT_SECRET: ${JAMBONZ_ENCRYPTION_SECRET:-rig-not-a-secret}
       JAMBONES_LOGLEVEL: info
@@ -200,6 +207,10 @@ services:
       JAMBONES_SBCS: 172.30.20.50
       # Required at init by @jambonz/time-series (no InfluxDB here; writes ignored).
       JAMBONES_TIME_SERIES_HOST: 127.0.0.1
+      # Static-addressing mode (matches sbc-inbound): skip redis-based FS discovery.
+      K8S: "1"
+      K8S_FEATURE_SERVER_SERVICE_NAME: drachtio-fs
+      K8S_SBC_SIP_SERVICE_NAME: drachtio-sbc
       JAMBONES_MYSQL_HOST: mysql
       JAMBONES_MYSQL_USER: jambones
       JAMBONES_MYSQL_PASSWORD: jambones
